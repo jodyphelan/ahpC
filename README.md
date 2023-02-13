@@ -2,6 +2,8 @@
 
 Code used to generate table summary tables of ahpC promoter mutations from a tb-profiler variant dump csv file and a csv file containing the isoniazid dst.
 
+### Input file formats
+
 #### Variant dump file:
 
 | sample_id  | genome_pos | gene | change      | freq | type                  | sublin           | drtype    | drugs     |
