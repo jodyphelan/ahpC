@@ -32,20 +32,31 @@ subsetC_variants = set([
     ('katG','p.Ser315Asn')
 ])
 
+variant_exclusion = [
+    ('katG','p.Arg463Leu'),
+    ('katG','p.Val469Leu'),
+    ('ahpC','c.-88G>A')
+]
+
 import math
 class Tab:
+    """Class to store 2x2 table and calculate different metrics"""
     def __init__(self):
         self.tp = 0
         self.fp = 0
         self.tn = 0
         self.fn = 0
     def sens(self):
+        """Return Sensitivity"""
         return self.tp/(self.tp+self.fn)
     def spec(self):
+        """return Specificity"""
         return self.tn/(self.tn+self.fp)
     def prev(self):
+        """Return prevalence"""
         return (self.tp+self.fn)/(self.tn+self.fp+self.tp+self.fn)
     def ppv(self):
+        """Return the PPV and 95% confidence intervals"""
         p = self.prev()
         Sp = self.spec()
         Se = self.sens()
@@ -72,33 +83,30 @@ class Tab:
          
 
 def main(args):
+
     dst = {}
     for row in csv.DictReader(open(args.meta)):
         if row['dst']!="NA":
             dst[row["wgs_id"]] = int(row['dst'])
     
-    variant_exclusion = [
-        ('katG','p.Arg463Leu'),
-        ('katG','p.Val469Leu'),
-        ('ahpC','c.-88G>A')
-    ]
-
     sample2vars = defaultdict(set)
     var2samples = defaultdict(set)
     lin2samples = defaultdict(set)
-
-    
+    var2genome_pos = {}
 
     def num_gene_variants(s,gene):
+        """Return number of variants in a gene for a sample"""
         return len([d for d in sample2vars[s] if d[0]==gene])
 
     def has_katG_var(s):
+        """Check if sample has a katG variant"""
         if "katG" in [d[0] for d in sample2vars[s]]:
             return True
         else:
             return False
 
     def var_in_lineage(var,samps):
+        """Check if variant is in lineage"""
         res = {}
         for lin in lin2samples:
             samps_in_lin = set([s for s in lin2samples[lin] if s in samps])
@@ -109,6 +117,7 @@ def main(args):
         return res
 
     def get_stats(var,samps):
+        """Create table instance and poplate cells with numbers"""
         tab = Tab()
         for s in samps:
             if var in sample2vars[s] and dst[s]==1:
@@ -124,7 +133,6 @@ def main(args):
 
         return tab
 
-    var2genome_pos = {}
     for row in csv.DictReader(open(args.variants)):
         
         # This section skips loading variants on several conditions
