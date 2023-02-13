@@ -12,7 +12,7 @@ import pathogenprofiler as pp
 import tbprofiler
 import math
 import numpy as np
-
+from scipy.stats import beta
 
 lineages = [
     "lineage1","lineage2","lineage3","lineage4",
@@ -55,33 +55,41 @@ class Tab:
     def prev(self):
         """Return prevalence"""
         return (self.tp+self.fn)/(self.tn+self.fp+self.tp+self.fn)
-    def ppv(self):
+    def ppv(self,method="exact"):
         """Return the PPV and 95% confidence intervals"""
+        
         p = self.prev()
         Sp = self.spec()
         Se = self.sens()
         n1 = self.tp + self.fn
         n0 = self.tn + self.fp
-        
+
         if (self.tp+self.fp)==0:
             return (np.nan,np.nan,np.nan)
-        
         ppv = (Se * p)/((Se * p) + ((1-Sp) * (1-p)))
+        if method=="mercaldo":
+            if self.tp>0 and self.fp==0:
+                return (ppv,np.nan,np.nan)
+            if self.tp==0 and self.fp>0:
+                return (0,np.nan,np.nan)
 
-        if self.tp>0 and self.fp==0:
-            return (ppv,np.nan,np.nan)
-        if self.tp==0 and self.fp>0:
-            return (0,np.nan,np.nan)
+            logit_ppv = math.log((Se * p)/((1 - Sp)*(1 - p)))
+            logit_ppv_var = ((1 - Se)/Se) * (1/n1) + (Sp/(1-Sp)) * (1/n0)
+            logit_ppv_lb = (math.e**(logit_ppv - 1.96*math.sqrt(logit_ppv_var)))/(1+(math.e**(logit_ppv - 1.96*math.sqrt(logit_ppv_var))))
+            logit_ppv_up = (math.e**(logit_ppv + 1.96*math.sqrt(logit_ppv_var)))/(1+(math.e**(logit_ppv + 1.96*math.sqrt(logit_ppv_var))))
 
-        logit_ppv = math.log((Se * p)/((1 - Sp)*(1 - p)))
-        logit_ppv_var = ((1 - Se)/Se) * (1/n1) + (Sp/(1-Sp)) * (1/n0)
-        logit_ppv_lb = (math.e**(logit_ppv - 1.96*math.sqrt(logit_ppv_var)))/(1+(math.e**(logit_ppv - 1.96*math.sqrt(logit_ppv_var))))
-        logit_ppv_up = (math.e**(logit_ppv + 1.96*math.sqrt(logit_ppv_var)))/(1+(math.e**(logit_ppv + 1.96*math.sqrt(logit_ppv_var))))
-
-        
-        return (ppv,logit_ppv_lb,logit_ppv_up)
-         
-
+            
+            return (ppv,logit_ppv_lb,logit_ppv_up)
+        else:
+            k = self.tp
+            n = (self.tp+self.fp)
+            alpha = 0.05
+            p_u, p_o = beta.ppf([alpha/2, 1 - alpha/2], [k, k + 1], [n - k + 1, n - k])
+            if ppv==0.0:
+                p_u = 0.0
+            if ppv==1.0:
+                p_o = 1.0
+            return (ppv,p_u,p_o)
 def main(args):
 
     dst = {}
@@ -152,26 +160,25 @@ def main(args):
         lin2samples[lin].add(row['sample_id'])
         var2genome_pos[key] = int(row['genome_pos'])
 
-    def get_result_row(var,samps):
+    def get_result_row(var,samps,subset):
         tab = get_stats(var,samps)
         r_samples = [s for s in samps if dst[s]==1 and s in var2samples[var]]
         s_samples = [s for s in samps if dst[s]==0 and s in var2samples[var]]
-        if var==('ahpC','c.-48G>A'):
-            print(vars(tab))
-            print(r_samples)
+
         res = {
             "gene": var[0],
             "change":var[1],
             "genome_pos":var2genome_pos[var],
+            "subset":subset,
             "r_samples": len(r_samples),
-            "s_samples": len(s_samples),
             "r_samples_with_katG": len([s for s in r_samples if has_katG_var(s)==True]),
             "r_samples_without_katG": len([s for s in r_samples if has_katG_var(s)==False]),
+            "s_samples": len(s_samples),
             "s_samples_with_katG": len([s for s in s_samples if has_katG_var(s)==True]),
             "s_samples_without_katG": len([s for s in s_samples if has_katG_var(s)==False]),
             "ppv": "%.2f" % (tab.ppv()[0]*100),
             "ppv_lb": "%.2f" % (tab.ppv()[1]*100),
-            "ppv_up": "%.2f" % (tab.ppv()[2]*100)
+            "ppv_ub": "%.2f" % (tab.ppv()[2]*100)
         }
         lin_info = var_in_lineage(var,samps)
 
@@ -190,14 +197,11 @@ def main(args):
         subsetB = [s for s in subsetA if len(sample2vars[s].intersection(subsetB_variants))==0]
         subsetC = [s for s in subsetB if len(sample2vars[s].intersection(subsetC_variants))==0]
 
-        row = get_result_row(var,subsetA)
-        row.update({"subset":"A"})
+        row = get_result_row(var,subsetA,"A")
         rows.append(row)
-        row = get_result_row(var,subsetB)
-        row.update({"subset":"B"})
+        row = get_result_row(var,subsetB,"B")
         rows.append(row)
-        row = get_result_row(var,subsetC)
-        row.update({"subset":"C"})
+        row = get_result_row(var,subsetC,"C")
         rows.append(row)
 
     with open(args.out,"w") as O:
